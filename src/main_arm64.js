@@ -69,7 +69,7 @@ var Memory = function() {
 var util = new Utils();
 var mem = new Memory();
 
-util.print("[*] jsc_haxx ios 9 (64bit) [*]");
+util.print("[*] jsc_haxx (64bit) [*]");
 
 mem.init_rw();
 if (!mem.test_rw()) {

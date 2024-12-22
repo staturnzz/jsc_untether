@@ -1,5 +1,5 @@
 .align 4
-.global _haxx
+.global _start
 
 #define TRAP_MACH_MSG           -31
 #define TRAP_MACH_TASK_SELF     -28
@@ -29,7 +29,7 @@
 #define MSG_OPT1                32
 #define MSG_OPT2                36
 #define MSG_ALL_IMAGE           40
-#define dyldImageLoadAddress    32
+#define IMAGE_LOAD_ADDR         32
 #define PARAMS_BASE             0
 #define PARAMS_ARGC             8
 #define PARAMS_ARGV0            16
@@ -94,7 +94,7 @@ _start:
     ldr     w15, [x12, w13, uxtw 2]
     cbz     w13, 2f
     cmp     w14, w15
-    beq    1b
+    beq     1b
 
     mov     x16, TRAP_MACH_REPLY_PORT
     svc     #0x80
@@ -146,7 +146,7 @@ _start:
 
     ldr     x8, [sp, MSG_ALL_IMAGE]
     cbz     x8, _quit
-    ldr     x10, [x8, dyldImageLoadAddress]
+    ldr     x10, [x8, IMAGE_LOAD_ADDR]
 
 
     // find dyld __DATA,__const
@@ -222,7 +222,7 @@ _start:
 
     // get __dyld_start
     ldr     x8, [sp, MSG_ALL_IMAGE]
-    ldr     x10, [x8, dyldImageLoadAddress]
+    ldr     x10, [x8, IMAGE_LOAD_ADDR]
     add     x10, x10, #0x1000
 
     // open and map file to jitted region
