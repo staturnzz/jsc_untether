@@ -1,10 +1,13 @@
-.align 2
-.thumb
+.align 4
+.arm
 .global _start
 
 #define TRAP_MACH_MSG           #-31
 #define TRAP_MACH_TASK_SELF     #-28
 #define TRAP_MACH_REPLY_PORT    #-26
+#define TRAP_THREAD_SELF        #-27
+#define TRAP_MACH_VM_ALLOCATE   #-10
+#define TRAP_THREAD_SWITCH      #-61
 
 #define MSGH_BITS               0
 #define MSGH_SIZE               4
@@ -17,6 +20,7 @@
 #define MSG_OPT2                36
 #define MSG_ALL_IMAGE           40
 
+#define SYS_EXIT                1
 #define SYS_READ                3
 #define SYS_OPEN                5
 #define SYS_LSEEK               199
@@ -26,10 +30,8 @@
 #define TASK_DYLD_INFO          17
 #define TASK_DYLD_INFO_COUNT    5
 #define IMAGE_LOAD_ADDR         20
-#define DATA_STR                0x41445f5f
-#define CONST_STR               0x6f635f5f
-#define DYLD_DLOPEN_OFFSET      0x2c
-#define DYLD_DLSYM_OFFSET       0x34
+#define THREAD_LIST             0x1c
+#define THREAD_LIST_COUNT       0x20
 
 #define PARAMS_BASE             0
 #define PARAMS_ARGC             4
@@ -46,22 +48,294 @@
     movt $0, #((($1) >> 16) & 0xffff)
 .endmacro
 
+.macro movp
+    movw $0, #:lower16:$1
+    movt $0, #:upper16:$1
+    adr r12, _start
+    add $0, $0, r12
+.endmacro
+
+.macro brx
+    adr     r12, $0
+    blx     r12
+.endmacro
+
 
 _start:
-    push    {r7, lr}
-    mov     r7, sp
-    sub     sp, #0x90
-
-    // find dyld_base
-    mov     r12, TRAP_MACH_REPLY_PORT
+    // sleep for 100ms
+    movs    r0, #0
+    movs    r1, #2
+    movs    r2, #100
+    mov     r12, TRAP_THREAD_SWITCH
     svc     #0x80
-    str     r0, [sp, MSGH_LOCAL_PORT]
-    mov     r9, r0
 
+    // allocate a new stack 
+    brx     _mach_task_self
+    mov     r1, sp
+    mov     r2, #0x40000
+    movs    r3, #0
+    movs    r4, #1
+    movs    r5, #0
+    movs    r6, #1
+    brx     _mach_vm_allocate
+
+    ldr     r0, [sp, #0x0]
+    cmp     r0, #0
+    beq     _quit
+    add     r0, r0, #0x10000
+    mov     sp, r0
+
+    // zero out thread state
+    movs    r0, #0
+    mov     r1, r0
+    mov     r2, r0
+    mov     r3, r0
+    mov     r4, r0
+    mov     r5, r0
+    mov     r6, r0
+    mov     r7, r0
+    mov     r8, r0
+    mov     r9, r0
+    mov     r10, r0
+    mov     r11, r0
+    mov     r12, r0
+    brx     _terminate_unused_threads
+
+    movp    r0, _target_macho
+    movs    r1, #0
+    brx     _open
+    cmp     r0, #0
+    ble     _quit
+    mov     r10, r0
+
+    movs    r1, #0
+    movs    r2, #0
+    movs    r3, SEEK_END
+    brx     _lseek
+    cmp     r0, #0
+    ble     _quit
+    mov     r11, r0
+
+    mov     r0, r10
+    movs    r1, #0
+    movs    r2, #0
+    movs    r3, SEEK_SET
+    brx     _lseek
+
+    brx      _mach_task_self
+    mov     r1, sp
+    mov     r2, #0x800000
+    movs    r3, #0
+    movs    r4, #1
+    movs    r5, #0
+    movs    r6, #1
+    brx     _mach_vm_allocate
+
+    ldr     r0, [sp]
+    cmp     r0, #0
+    beq     _quit
+    mov     r7, r0
+
+    // read in the target macho
+    adr     r0, _start
+    nop
+    mov     r1, #0x0fff
+    mvn     r1, r1
+    and     r0, r0, r1
+    add     r0, r0, #0x2000
+    mov     r6, r0
+
+    mov     r1, r0
+    mov     r0, r10
+    mov     r2, r11
+    brx     _read
+
+    dsb     sy
+    nop
+    mov     r10, r6
+    add     r11, r7, #0x80000
+
+    // get __dyld_start
+    brx     _find_dyld_start
+    cmp     r0, #0
+    beq     _quit
+    mov     r8, r0
+
+    // set stack for __dyld_start call
+    str     r10, [r11, PARAMS_BASE]
+    movs    r0, #1
+    str     r0, [r11, PARAMS_ARGC]
+    add     r0, r11, PARAMS_STRINGS
+    str     r0, [r11, PARAMS_ARGV0]
+    str     r0, [r11, PARAMS_APPLE0]
+    movs    r0, #0
+    str     r0, [r11, PARAMS_ARGV1]
+    str     r0, [r11, PARAMS_ENV0]
+    str     r0, [r11, PARAMS_APPLE1]
+
+    movp    r0, _empty_str
+    str     r0, [r11, PARAMS_STRINGS]
+    mov     r12, r8
+    mov     sp, r11
+    bx      r12
+
+    movs    r0, #0
+    mov     r12, #1
+    svc     #0x80
+    nop
+
+
+// syscall wrappers
+_open:
+    mov     r12, SYS_OPEN
+    svc     #0x80
+    bx      lr
+
+
+_lseek:
+    mov     r12, SYS_LSEEK
+    svc     #0x80
+    bx      lr
+
+
+_read:
+    mov     r12, SYS_READ
+    svc     #0x80
+    bx      lr
+
+
+// mach trap wrappers
+_mach_task_self:
     mov     r12, TRAP_MACH_TASK_SELF
     svc     #0x80
+    bx      lr
+
+
+_mach_vm_allocate:
+    mov     r12, TRAP_MACH_VM_ALLOCATE
+    svc     #0x80
+    bx      lr
+
+
+_mach_reply_port:
+    mov     r12, TRAP_MACH_REPLY_PORT
+    svc     #0x80
+    bx      lr
+
+
+_thread_self:
+    mov     r12, TRAP_THREAD_SELF
+    svc     #0x80
+    bx      lr
+
+
+_mach_msg:
+    movs    r5, #0
+    movs    r6, #0
+    mov     r12, TRAP_MACH_MSG
+    svc     #0x80
+    bx      lr
+
+
+_terminate_thread:
+    push    {r7, lr}
+    mov     r7, sp
+    sub     sp, #0x40
+
+    mov     r4, r0
+    brx     _thread_self
+    cmp     r0, r4
+    beq     0f
+
+    str     r4, [sp, MSGH_REMOTE_PORT]
+    brx      _mach_reply_port
+    str     r0, [sp, MSGH_LOCAL_PORT]
+    mov     r4, r0
+
+    mov     r0, #0x1511
+    str     r0, [sp, MSGH_BITS]
+    movs    r0, #0x18
+    str     r0, [sp, MSGH_SIZE]
+    movs    r0, #0
+    str     r0, [sp, MSGH_VOUCHER_PORT]
+    mov     r0, #0xe10
+    str     r0, [sp, MSGH_ID]
+
+    mov     r0, sp
+    movs    r1, #3
+    movs    r2, #0x18
+    movs    r3, #0x2c
+    brx     _mach_msg
+
+0:
+    mov     r0, #0
+1:
+    add     sp, #0x40
+    pop     {r7, pc}
+
+
+_terminate_unused_threads:
+    push    {r7, lr}
+    mov     r7, sp
+    sub     sp, #0x50
+
+    brx     _mach_reply_port
+    mov     r4, r0
+    str     r0, [sp, MSGH_LOCAL_PORT]
+
+    brx     _mach_task_self
     str     r0, [sp, MSGH_REMOTE_PORT]
-    mov     r10, r0
+
+    mov     r0, #0x1513
+    str     r0, [sp, MSGH_BITS]
+    mov     r0, #0x18
+    str     r0, [sp, MSGH_SIZE]
+    mov     r0, #0
+    str     r0, [sp, MSGH_VOUCHER_PORT]
+    mov     r0, #0xd4a
+    str     r0, [sp, MSGH_ID]
+
+    mov     r0, sp
+    movs    r1, #3
+    movs    r2, #0x18
+    movs    r3, #0x40
+    brx     _mach_msg
+
+    ldr     r11, [sp, THREAD_LIST]
+    ldr     r10, [sp, THREAD_LIST_COUNT]
+    cmp     r10, #1
+    ble     1f
+    sub     r10, r10, #1
+
+0:
+    dsb     sy
+    cmp     r10, #0
+    blt     1f
+
+    movs    r4, #4
+    mul     r5, r10, r4
+    ldr     r0, [r11, r5]
+    sub     r10, r10, #1
+
+    brx     _terminate_thread
+    b       0b
+
+1:
+    add     sp, #0x50
+    pop     {r7, pc}
+
+
+_find_dyld_start:
+    push    {r7, lr}
+    mov     r7, sp
+    sub     sp, #0x180
+
+    brx     _mach_reply_port
+    mov     r4, r0
+    str     r0, [sp, MSGH_LOCAL_PORT]
+
+    brx     _mach_task_self
+    str     r0, [sp, MSGH_REMOTE_PORT]
 
     mov     r0, #0x1513
     str     r0, [sp, MSGH_BITS]
@@ -79,187 +353,26 @@ _start:
     str     r0, [sp, MSG_OPT2]
 
     mov     r0, sp
-    mov     r1, #3
-    mov     r2, #0x28
-    mov     r3, #0x13c
-    mov     r4, r9
-    mov     r5, #0
-    mov     r6, r5
+    movs    r1, #3
+    movs    r2, #0x28
+    movs    r3, #0x13c
+    brx     _mach_msg
 
-    mov     r12, TRAP_MACH_MSG
-    svc     #0x80
-    cmp     r0, #0
-    bne     _quit
-
-    ldr     r0, [sp, MSG_ALL_IMAGE]
-    cmp     r0, #0
-    beq     _quit
-
-    ldr     r1, [r0, IMAGE_LOAD_ADDR]
-    cmp     r1, #0
-    beq     _quit
-
-    adr     r0, _dyld_base
-    str     r1, [r0]
-    mov     r8, r1
-
-    // find dyld __DATA,__const
-    mov32   r6, CONST_STR
-    mov32   r7, DATA_STR
-
-0:
-    add     r8, r8, #1
-    ldr     r5, [r8]
-    cmp     r5, r6
-    bne     0b
-
-    add     r8, r8, #0x10
-    ldr     r5, [r8]
-    cmp     r5, r7
-    beq     1f
-    b       0b
-
-1:
-    add     r8, r8, #0x18
-    ldr     r8, [r8]
-    add     r8, r8, r1
-
-    // resolve dyld funcs
-    add     r0, r8, DYLD_DLOPEN_OFFSET
-    ldr     r0, [r0]
-    cmp     r0, #0
-    beq     _quit
-    adr     r2, _dlopen
-    str     r0, [r2]
-
-    add     r0, r8, DYLD_DLSYM_OFFSET
-    ldr     r0, [r0]
-    cmp     r0, #0
-    beq     _quit
-    adr     r2, _dlsym
-    str     r0, [r2]
-
-    // get __dyld_start
-    adr     r0, _dyld_base
-    ldr     r0, [r0]
-    add     r0, r0, #0x1000
-    adr     r1, _dyld_start
-    str     r0, [r1]
-
-    // open target macho and get size
-    mov     r12, SYS_OPEN
-    adr     r0, _target_macho
-    mov     r1, #0
-    svc     #0x80
-    cmp     r0, #0
-    ble     _quit
-    mov     r8, r0
-
-    mov     r12, SYS_LSEEK
-    movs    r1, #0
-    mov     r2, r1
-    mov     r3, SEEK_END
-    svc     #0x80
-    cmp     r0, #0
-    ble     _quit
-    mov     r9, r0
-
-    mov     r12, SYS_LSEEK
-    mov     r0, r8
-    movs    r1, #0
-    mov     r2, r1
-    mov     r3, SEEK_SET
-    svc     #0x80
-
-    // get malloc ptr
-    str     r8, [sp]
-    str     r9, [sp, #0x4]
-
-    movs    r5, #0
-    mov     r6, r5
-    mov     r7, sp
-    sub     sp, #0x8
-
-    adr     r12, _dlopen
-    ldr     r12, [r12]
-    adr     r0, _lib_system_str
-    mov     r1, #0x2
-    blx     r12
-    cmp     r0, #0
-    beq     _quit
-
-    adr     r12, _dlsym
-    ldr     r12, [r12]
-    adr     r1, _malloc_str
-    blx     r12
-    cmp     r0, #0
-    beq     _quit
-
-    // allocate stack for target macho
-    mov     r12, r0
-    mov     r0, #0x800000
-    blx     r12
-    cmp     r0, #0
-    beq     _quit
-
-    add     sp, #0x8
-    mov     r7, r0
-    ldr     r8, [sp]
-    ldr     r9, [sp, #0x4]
-
-    // load in the target macho
-    adr     r0, _start
-    mov     r1, #0x0fff
-    mvn     r1, r1
-    and     r0, r0, r1
-    add     r0, r0, #0x1000
-    mov     r6, r0
-
-    mov     r12, SYS_READ
-    mov     r1, r0
-    mov     r0, r8
-    mov     r2, r9
-    svc     #0x80
-    cmp     r0, #0
-    ble     _quit
-    mov     r0, r6
-
-    // setup for __dyld_start call
-    add     r6, r7, #0x40000 // maybe adjust?
-    str     r0, [r6, PARAMS_BASE]
-    mov     r0, #1
-    str     r0, [r6, PARAMS_ARGC]
-    add     r0, r6, PARAMS_STRINGS
-    str     r0, [r6, PARAMS_ARGV0]
-    str     r0, [r6, PARAMS_APPLE0]
-    mov     r0, #0
-    str     r0, [r6, PARAMS_ARGV1]
-    str     r0, [r6, PARAMS_ENV0]
-    str     r0, [r6, PARAMS_APPLE1]
-
-    adr     r0, _empty_str
-    str     r0, [r6, PARAMS_STRINGS]
-    adr     r0, _dyld_start
-    ldr     r12, [r0]
-    mov     sp, r6
-    bx      r12
-
-    add     sp, #0x90
-    pop     {r7, pc}
+    ldr     r4, [sp, MSG_ALL_IMAGE]
     nop
-    b       #-4
-    
+    ldr     r2, [r4, IMAGE_LOAD_ADDR]
+    nop
+    add     r0, r2, #0x1000
+    nop
+
+    add     sp, #0x180
+    pop     {r7, pc}
+
 
 _quit:
-    trap
-    nop
+    movs    r0, #0
+    mov     r12, #1
+    svc     #0x80
 
-
-_dyld_base:         .long 0x0
-_dyld_start:        .long 0x0
-_dlopen:            .long 0x0
-_dlsym:             .long 0x0
-_lib_system_str:    .ascii "/usr/lib/libSystem.B.dylib\0\0"
-_malloc_str:        .ascii "malloc\0\0"
-_target_macho:      .ascii "/var/test_bin\0\0\0"
-_empty_str:         .ascii "\0\0\0\0"
+_target_macho:          .ascii "/var/test_bin\0\0\0"
+_empty_str:             .ascii "\0\0\0\0"

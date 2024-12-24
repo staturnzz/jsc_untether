@@ -18,7 +18,7 @@ arm64:
 	rm -rf loader
 
 armv7:
-	$(CC) -arch armv7s $(CFLAGS) -c ./src/main_armv7.s
+	$(CC) -arch armv7 $(CFLAGS) -c ./src/main_armv7.s
 	$(STRIP) main_armv7.o
 	./tools/make_bin.sh main_armv7.o
 	$(PYTHON) ./tools/bin_to_js.py loader armv7
