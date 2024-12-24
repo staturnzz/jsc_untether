@@ -4,6 +4,7 @@
 #define TRAP_MACH_MSG           -31
 #define TRAP_MACH_TASK_SELF     -28
 #define TRAP_MACH_REPLY_PORT    -26
+#define TRAP_THREAD_SELF        -27
 #define SYS_READ                3
 #define SYS_WRITE               4
 #define SYS_OPEN                5
@@ -67,6 +68,10 @@ _start:
     svc     #0x80
     mov     w4, w0
 
+    mov     x16, TRAP_THREAD_SELF
+    svc     #0x80
+    mov     w17, w0
+
     mov     x16, TRAP_MACH_TASK_SELF
     svc     #0x80
     mov     w14, w0
@@ -93,7 +98,7 @@ _start:
     sub     w13, w13, #1
     ldr     w15, [x12, w13, uxtw 2]
     cbz     w13, 2f
-    cmp     w14, w15
+    cmp     w17, w15
     beq     1b
 
     mov     x16, TRAP_MACH_REPLY_PORT
@@ -148,7 +153,6 @@ _start:
     cbz     x8, _quit
     ldr     x10, [x8, IMAGE_LOAD_ADDR]
 
-
     // find dyld __DATA,__const
     mov     x11, x10
     mov64   x13, CONST_STR
@@ -182,7 +186,6 @@ _start:
     cbz     x9, _quit
     stur    x9, [sp, #0x8]
 
-
     // find voucher_activity_buffer_hook_install_4libtrace
     adr     x0, _dispatch_dylib
     movz    x1, 0x2
@@ -194,7 +197,6 @@ _start:
     ldr     x8, [sp, #0x8]
     blr     x8
     cbz     x0, _quit
-
 
     // decode adrp add to find __voucher_activity_buffer_hook
     ldur    w1, [x0]
